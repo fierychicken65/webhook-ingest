@@ -3,6 +3,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"log/slog"
 	"sync"
@@ -44,7 +45,7 @@ func (s *Service) Ingest(ctx context.Context, evt Event) error {
 		return err
 	}
 	if exists {
-		s.log.Info("duplicate delivery ignored", "event_id", evt.EventID)
+		s.log.Info("duplicate delivery ignored (fast path)", "event_id", evt.EventID)
 		return nil
 	}
 
@@ -63,16 +64,18 @@ func (s *Service) Ingest(ctx context.Context, evt Event) error {
 		OccurredAt:   evt.OccurredAt,
 		Payload:      payload,
 	}
-	if err := s.store.InsertEvent(ctx, rec); err != nil {
+
+	err = s.store.IngestEventTx(ctx, rec, func() error {
+		s.cache.Record(rec.AccountID, rec.DurationSec)
+		return nil
+	})
+	if errors.Is(err, store.ErrDuplicateEvent) {
+		s.log.Info("duplicate delivery ignored (tx collision)", "event_id", evt.EventID)
+		return nil
+	}
+	if err != nil {
 		return err
 	}
-	if err := s.store.UpsertCall(ctx, rec); err != nil {
-		return err
-	}
-	if err := s.store.IncrementAccountStats(ctx, rec.AccountID, rec.DurationSec); err != nil {
-		return err
-	}
-	s.cache.Record(rec.AccountID, rec.DurationSec)
 
 	// Recordings are slow to fetch, so that part does not block the provider.
 	if rec.RecordingURL != "" {
