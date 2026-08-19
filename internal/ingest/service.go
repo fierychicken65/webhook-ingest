@@ -116,6 +116,15 @@ func (s *Service) Shutdown(ctx context.Context) error {
 
 // LoadStats initializes the stats cache from the database.
 func (s *Service) LoadStats(ctx context.Context) error {
+	s.log.Info("initializing stats cache from database")
+	dbStats, err := s.store.LoadAllStats(ctx)
+	if err != nil {
+		return err
+	}
+	for accountID, st := range dbStats {
+		s.cache.Set(accountID, st.CallCount, st.TotalDurationSec)
+	}
+	s.log.Info("stats cache initialization completed", "loaded_accounts", len(dbStats))
 	return nil
 }
 

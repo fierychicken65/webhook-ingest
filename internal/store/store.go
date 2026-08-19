@@ -129,3 +129,27 @@ func (s *Store) AccountStats(ctx context.Context, accountID string) (Stats, erro
 	}
 	return st, nil
 }
+
+// LoadAllStats reads all per-account stats from the account_stats table.
+func (s *Store) LoadAllStats(ctx context.Context) (map[string]Stats, error) {
+	rows, err := s.pool.Query(ctx, `SELECT account_id, call_count, total_duration_sec FROM account_stats`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make(map[string]Stats)
+	for rows.Next() {
+		var accountID string
+		var st Stats
+		if err := rows.Scan(&accountID, &st.CallCount, &st.TotalDurationSec); err != nil {
+			return nil, err
+		}
+		res[accountID] = st
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
