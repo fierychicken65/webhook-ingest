@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -22,6 +23,7 @@ type Service struct {
 	cache *stats.Cache
 	rdb   *redis.Client
 	log   *slog.Logger
+	wg    sync.WaitGroup
 }
 
 // New builds a Service.
@@ -74,7 +76,9 @@ func (s *Service) Ingest(ctx context.Context, evt Event) error {
 
 	// Recordings are slow to fetch, so that part does not block the provider.
 	if rec.RecordingURL != "" {
+		s.wg.Add(1)
 		go func() {
+			defer s.wg.Done()
 			if err := s.processRecording(context.Background(), rec); err != nil {
 				s.log.Error("process recording failed", "call_id", rec.CallID, "err", err)
 			}
@@ -93,7 +97,21 @@ func (s *Service) processRecording(ctx context.Context, rec store.Event) error {
 
 // Shutdown gracefully shuts down the service, waiting for any background tasks to finish.
 func (s *Service) Shutdown(ctx context.Context) error {
-	return nil
+	s.log.Info("shutting down ingest service background tasks")
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		s.log.Info("all background tasks completed")
+		return nil
+	case <-ctx.Done():
+		s.log.Error("shutdown timed out before background tasks completed")
+		return ctx.Err()
+	}
 }
 
 // LoadStats initializes the stats cache from the database.
