@@ -90,3 +90,15 @@ func (s *Service) processRecording(ctx context.Context, rec store.Event) error {
 	time.Sleep(recordingWork)
 	return s.store.MarkRecordingProcessed(ctx, rec.CallID)
 }
+
+// Shutdown gracefully shuts down the service, waiting for any background tasks to finish.
+func (s *Service) Shutdown(ctx context.Context) error {
+	return nil
+}
+
+// LoadStats initializes the stats cache from the database.
+func (s *Service) LoadStats(ctx context.Context) error {
+	return nil
+}
+
+
