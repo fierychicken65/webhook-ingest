@@ -1,6 +1,8 @@
 package stats_test
 
 import (
+	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/convin/webhook-ingest/internal/stats"
@@ -30,3 +32,29 @@ func TestCacheGetUnknownAccountIsZero(t *testing.T) {
 		t.Fatalf("got %+v, want zero value", got)
 	}
 }
+
+func TestCacheConcurrentAccess(t *testing.T) {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	c := stats.NewCache()
+
+	const goroutines = 200
+	const iterations = 200
+	done := make(chan bool)
+
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			for j := 0; j < iterations; j++ {
+				c.Record(fmt.Sprintf("acc_%d_%d", id, j), 1)
+				_ = c.Get(fmt.Sprintf("acc_%d_%d", id, j))
+			}
+			done <- true
+		}(i)
+	}
+
+	for i := 0; i < goroutines; i++ {
+		<-done
+	}
+}
+
+
+
